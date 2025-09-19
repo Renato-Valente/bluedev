@@ -5,6 +5,42 @@ import 'dotenv/config';
 import pkg from 'pg';
 
 
+
+//UTILS
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// converte número de dias desde 01/01/1900 para Date (UTC)
+function dateFromDaysSince1900(n, { excel1900 = false } = {}) {
+  if (typeof n !== 'number' || !isFinite(n)) {
+    throw new TypeError('n precisa ser um número finito', n);
+  }
+  const days = Math.floor(n);            // ignoramos frações (horas)
+  const epoch = Date.UTC(1900, 0, 1);    // 01/01/1900
+  let offset = days - 1;                 // dia 1 => 1900-01-01
+
+  // modo Excel (1900): ajusta o "dia fantasma" 29/02/1900
+  if (excel1900 && days >= 60) offset -= 1;
+
+  return new Date(epoch + offset * MS_PER_DAY);
+}
+
+// formata dd/mm/yy (dois dígitos)
+function formatDDMMYY(date) {
+  const dd = String(date.getUTCDate()).padStart(2, '0');
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const yy = String(date.getUTCFullYear());
+  return `${yy}/${mm}/${dd}`;
+}
+
+// função principal
+function days1900ToDDMMYY(n, { excel1900 = false } = {}) {
+  // caso especial: Excel serial 60 deve mostrar 29/02/1900
+  if (excel1900 && Math.floor(n) === 60) return '29/02/00';
+  return formatDDMMYY(dateFromDaysSince1900(n, { excel1900 }));
+}
+
+
+
 const getProdutos = async () => {
     console.log('Vamos ler essas tabelas 🧐')
     const wb = xlsx.readFile('BaseDashProducao.xlsm', {
@@ -175,9 +211,188 @@ const getProducao = async () => {
     }
 }
 
+const getParadas = async () => {
+    console.log('Vamos ler essas tabelas 🧐')
+    const wb = xlsx.readFile('BaseDashParadas.xlsm', {
+    // Ajuda quando houver células com datas
+    cellDates: false
+    });
+
+    console.log(wb.SheetNames);
+    const aba = 'BD_Parada';
+    let rows = xlsx.utils.sheet_to_json(wb.Sheets[aba], {
+    defval: null,          // mantém colunas com vazio = null
+    raw: true              // mantém números como números
+    });
+
+    console.log('resultado:', rows[42]);
+
+    //conectando com banco
+    console.log('Vamos conectar com o banco 🐘');
+    const { Pool } = pkg;
+    
+    const pool = new Pool({
+    host: process.env.PGHOST,
+    port: Number(process.env.PGPORT || 5432),
+    database: process.env.PGDATABASE,
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    //  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false, // ajuste em prod
+    });
+
+
+    console.log('vou inserir 🥒😨');
+
+    const cols = [
+        'data',
+        'lote',
+        'sku',
+        'hora_inicio',
+        'hora_fim',
+        'total_parado',
+        'linha',
+        'maquina',
+        'motivo_parada',
+        'categoria_parada',
+        'custo_fabril',
+        'custo_total',
+    ]
+    //rows = [rows[0]];
+    console.log('lenght', rows.length)
+    for(const r of rows /* let x = 0; x < 1; x++ */){
+
+        try{
+
+
+            let row = r;
+            console.log('ESTE EH O OBJETO ANTES DAS ALTERACOES\n', row)
+            delete(row['Id']);
+            delete(row['Nome do Produto']);
+            //RENATOBOSS MEXENDO AQUI!!!
+            //row['Data'] = '09/03/2000'
+            row['Data'] = days1900ToDDMMYY(row['Data'], {excel1900: true})
+
+
+
+            row['Total_Parado'] = Number(row['Total_Parado'].toFixed(7));
+            row['Hora_Inicio'] = Number(row['Hora_Inicio'].toFixed(7));
+            row['Hora_Fim'] = Number(row['Hora_Fim'].toFixed(7));
+            /* row['Custo_Fabril'] = Number(row['Custo_Fabril'].toFixed(2));
+            row['CustoTotal'] = Number(row['CustoTotal'].toFixed(2)); */
+            //formatando row
+            //row['Total_Parado'] = row['Total_Parado'].toISOString().slice(11, 19);
+            console.log('size:', Object.values(row).length)
+            console.log('ESSE EH O OBJETO QUE VAI SER INSERIDO NO BANCO\n:', row);
+
+
+            await pool.query(
+                `insert into bd_parada (${cols.join(',')}) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+                Object.values(row)
+            )
+        }
+        catch(err){
+            console.log('deu errado:', err);
+            continue;
+        }
+    }
+
+}
+
+
+const getEstoque = async() => {
+    console.log('Vamos ler essas tabelas 🧐')
+    const wb = xlsx.readFile('BaseEstoque.xlsm', {
+    // Ajuda quando houver células com datas
+    cellDates: true
+    });
+
+    //console.log(wb.SheetNames);
+    const aba = 'BD_Estoque';
+    let rows = xlsx.utils.sheet_to_json(wb.Sheets[aba], {
+    defval: null,          // mantém colunas com vazio = null
+    raw: true              // mantém números como números
+    });
+
+    console.log('resultado:', rows[1]);
+
+    //conectando com banco
+    console.log('Vamos conectar com o banco 🐘');
+    const { Pool } = pkg;
+    
+    const pool = new Pool({
+    host: process.env.PGHOST,
+    port: Number(process.env.PGPORT || 5432),
+    database: process.env.PGDATABASE,
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    //  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false, // ajuste em prod
+    });
+
+    console.log('inserindo');
+    const cols = [
+        'id',
+        'data',
+        'sku',
+        'descricao_prod',
+        'pallets',
+        'pacotes_cx',
+        'total',
+        'pedidos_aberto',
+    ]
+    let row = rows[0];
+    await pool.query(
+        `insert into bd_estoque values($1,$2,$3,$4,$5,$6,$7,$8)`,
+        Object.values(row)
+    )
+}
+
+const getFornecedor = async () => {
+    console.log('Vamos ler essas tabelas 🧐')
+    const wb = xlsx.readFile('BaseDashProducao.xlsm', {
+    // Ajuda quando houver células com datas
+    cellDates: true
+    });
+
+    //console.log(wb.SheetNames);
+    const aba = 'BD_Produtos';
+    let rows = xlsx.utils.sheet_to_json(wb.Sheets[aba], {
+    defval: null,          // mantém colunas com vazio = null
+    raw: true              // mantém números como números
+    });
+
+    console.log('resultado:', rows[1]);
+
+    //conectando com banco
+    console.log('Vamos conectar com o banco 🐘');
+    const { Pool } = pkg;
+    
+    const pool = new Pool({
+    host: process.env.PGHOST,
+    port: Number(process.env.PGPORT || 5432),
+    database: process.env.PGDATABASE,
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    //  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false, // ajuste em prod
+    });
+
+    //pegar pedidosAberto da outra aba
+
+    console.log('vamos inserir 😎');
+    const cols = [
+        'nome_fornecedor',
+        'codigo_fornecedor',
+        'lead_time',
+        'cond_pgto',
+    ]
+
+
+}
+
 
 //getProdutos();
-getProducao();
+//getProducao();
+getParadas();
+//getEstoque();
 
 
 
