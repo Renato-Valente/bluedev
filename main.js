@@ -299,6 +299,67 @@ const getParadas = async () => {
 }
 
 
+const getFornecedor = async () => {
+    console.log('Vamos ler essas tabelas 🧐')
+    const wb = xlsx.readFile('01.08.2025 Custo dos Produtos.xlsm', {
+    // Ajuda quando houver células com datas
+    cellDates: true
+    });
+
+    console.log('sheets', wb.SheetNames)
+
+    //console.log(wb.SheetNames);
+    const aba = 'BD Fornecedor';
+    let rows = xlsx.utils.sheet_to_json(wb.Sheets[aba], {
+    defval: null,          // mantém colunas com vazio = null
+    raw: false              // mantém números como números
+    });
+
+    //console.log('testando ', rows);
+
+    //conectando com banco
+    console.log('Vamos conectar com o banco 🐘');
+    const { Pool } = pkg;
+    
+    const pool = new Pool({
+    host: process.env.PGHOST,
+    port: Number(process.env.PGPORT || 5432),
+    database: process.env.PGDATABASE,
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    //  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false, // ajuste em prod
+    });
+
+
+    console.log('vamos inserir 😎');
+    
+    for(const r of rows){
+        try{
+            let row = r; 
+            const cols = [
+                'nome_fornecedor',
+                'codigo_fornecedor',
+                'lead_time',
+                'cond_pgto',
+            ]
+
+            console.log('ESTE EH O OBJETO ANTES DAS ALTERACOES\n', row);
+
+            await pool.query(
+                `insert into bd_fornecedor (${cols.join(',')}) values($1,$2,$3,$4)\n`
+                +`on conflict (codigo_fornecedor) do\n`
+                +`update set (${cols.join(',')}) = ($1,$2,$3,$4)`,
+                Object.values(row)
+            )
+        }
+        catch(err){
+            console.log('deu tudo errado:', err);
+        }
+    }
+
+}
+
+
 const getEstoque = async() => {
     console.log('Vamos ler essas tabelas 🧐')
     const wb = xlsx.readFile('BaseEstoque.xlsm', {
@@ -313,7 +374,7 @@ const getEstoque = async() => {
     raw: true              // mantém números como números
     });
 
-    console.log('resultado:', rows[1]);
+    //console.log('resultado:', rows[1]);
 
     //conectando com banco
     console.log('Vamos conectar com o banco 🐘');
@@ -328,9 +389,20 @@ const getEstoque = async() => {
     //  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false, // ajuste em prod
     });
 
+
+    //pegando o valor de PedidosAbertos
+
+    console.log('Pegando o valor dos pedidos 😨');
+    const pedidos = xlsx.utils.sheet_to_json(wb.Sheets['BD_PedidosAberto'], {
+    defval: null,          // mantém colunas com vazio = null
+    raw: true              // mantém números como números
+    });
+
+    console.log('teste:', pedidos[0])
+
     console.log('inserindo');
     const cols = [
-        'id',
+        //'id',
         'data',
         'sku',
         'descricao_prod',
@@ -339,60 +411,42 @@ const getEstoque = async() => {
         'total',
         'pedidos_aberto',
     ]
-    let row = rows[0];
-    await pool.query(
-        `insert into bd_estoque values($1,$2,$3,$4,$5,$6,$7,$8)`,
-        Object.values(row)
-    )
-}
-
-const getFornecedor = async () => {
-    console.log('Vamos ler essas tabelas 🧐')
-    const wb = xlsx.readFile('BaseDashProducao.xlsm', {
-    // Ajuda quando houver células com datas
-    cellDates: true
-    });
-
-    //console.log(wb.SheetNames);
-    const aba = 'BD_Produtos';
-    let rows = xlsx.utils.sheet_to_json(wb.Sheets[aba], {
-    defval: null,          // mantém colunas com vazio = null
-    raw: true              // mantém números como números
-    });
-
-    console.log('resultado:', rows[1]);
-
-    //conectando com banco
-    console.log('Vamos conectar com o banco 🐘');
-    const { Pool } = pkg;
-    
-    const pool = new Pool({
-    host: process.env.PGHOST,
-    port: Number(process.env.PGPORT || 5432),
-    database: process.env.PGDATABASE,
-    user: process.env.PGUSER,
-    password: process.env.PGPASSWORD,
-    //  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false, // ajuste em prod
-    });
-
-    //pegar pedidosAberto da outra aba
-
-    console.log('vamos inserir 😎');
-    const cols = [
-        'nome_fornecedor',
-        'codigo_fornecedor',
-        'lead_time',
-        'cond_pgto',
-    ]
 
 
+    //inserindo o valor de pedidos
+    for(const r of rows){
+        try{
+            let row = r;
+            console.log('ESTE EH O OBJETO ANTES DAS ALTERACOES\n', row);
+
+            const sku = row['SKU'];
+            const pedido = pedidos.find((p) => p['SKU'] == sku);
+            const abertos = pedido && pedido != null ? pedido['Total'] : 0;
+
+            row['pedidos_abertos'] = abertos;
+
+            console.log('DEPOIS DAS ALTERACOES\n', row);
+
+            await pool.query(
+                `insert into bd_estoque (${cols.join(',')}) values($1,$2,$3,$4,$5,$6,$7)`,
+                Object.values(row)
+            )
+        }
+        catch(err){
+            console.log('deu tudo errado:', err);
+        }
+    }
 }
 
 
-//getProdutos();
-//getProducao();
-getParadas();
-//getEstoque();
+//getProdutos(); //Done
+//getProducao(); //Done
+//getParadas(); //Done
+//getFornecedor(); // Done
+//getEstoque(); //(Done?)
+
+
+
 
 
 
