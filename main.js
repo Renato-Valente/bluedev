@@ -244,6 +244,7 @@ const getParadas = async () => {
     console.log('vou inserir 🥒😨');
 
     const cols = [
+        'id',
         'data',
         'lote',
         'sku',
@@ -266,7 +267,7 @@ const getParadas = async () => {
 
             let row = r;
             console.log('ESTE EH O OBJETO ANTES DAS ALTERACOES\n', row)
-            delete(row['Id']);
+            //delete(row['Id']);
             delete(row['Nome do Produto']);
             //RENATOBOSS MEXENDO AQUI!!!
             //row['Data'] = '09/03/2000'
@@ -286,7 +287,9 @@ const getParadas = async () => {
 
 
             await pool.query(
-                `insert into bd_parada (${cols.join(',')}) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+                `insert into bd_parada (${cols.join(',')}) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)\n`
+                +`on conflict (id, sku) do\n`
+                +`update set (${cols.join(',')}) = ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
                 Object.values(row)
             )
         }
@@ -554,21 +557,90 @@ const getMateriaPrima = async () => {
     }
 }
 
+const getQualidade = async () => {
+    console.log('Vamos ler essas tabelas 🧐')
+    const wb = xlsx.readFile('BaseDashQualidade.xlsm', {
+    // Ajuda quando houver células com datas
+    cellDates: true
+    });
+
+    console.log(wb.SheetNames);
+    const aba = 'BD_Qualidade';
+    let rows = xlsx.utils.sheet_to_json(wb.Sheets[aba], {
+    defval: null,          // mantém colunas com vazio = null
+    raw: true              // mantém números como números
+    });
+
+    //conectando com banco
+    console.log('Vamos conectar com o banco 🐘');
+    const { Pool } = pkg;
+    
+    const pool = new Pool({
+    host: process.env.PGHOST,
+    port: Number(process.env.PGPORT || 5432),
+    database: process.env.PGDATABASE,
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    //  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false, // ajuste em prod
+    });
+
+    const cols = [
+        'lote_id',
+        'id_produto',
+        'data_insercao',
+        'data_analise',
+        'conforme',
+        'volume',
+        'responsavel_analise',
+        'agua_cloro',
+        'agua_turbidez',
+        'agua_ph',
+        'xarope_brix',
+        'xarope_acidez',
+        'xarope_ph',
+        'peso_garrafa',
+        'milimetro_parede_garrafa',
+        'analisevisual_garrafa',
+        'co2_bebidafinal',
+        'brix_bebidafinal',
+        'sensorial_bebidafinal',
+        'ph_bebidafinal',
+        'acidez_bebidafinal'
+    ]
+
+    for(const r of rows){
+        try{
+            let row = r;
+            console.log('ANTES DAS MUDANCAS\n', Object.values(row).length);
+            console.log('ANTES DAS MUDANCAS\n', row);
+            row['Conforme'] = row['Conforme'].toUpperCase().match('%SIM%') ? true : false;
+
+            console.log('OBJETO DEPOIS DAS MUDANCAS\n', row);
+
+            await pool.query(
+                `insert into bd_qualidade (${cols.join(',')}) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)\n`
+                +`on conflict (lote_id) do \n`
+                +`update set (${cols.join(',')}) = ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+                Object.values(row)
+            )
+        }
+        catch(err){
+            console.log('deu tudo errado', err);
+        }
+    }
+
+
+}
+
 
 //getProdutos(); //Done
 //getProducao(); //Done
-//getParadas(); //Done
+//getParadas(); //Done  coluna id adicionada e contraint (id, sku) criada
 //getFornecedor(); // Done
 //getEstrutura(); //Done
-//getEstoque(); //(Done?) Sem id no Excel, usando o valor padrão (inscrement)
+//getEstoque(); //(Done?) Sem id no Excel, usando o valor padrão (inscrement) sem update
 //getMateriaPrima(); //(Done?) sem data no excel, usando 09/03/2000 em todos
-
-
-
-
-
-
-
+//getQualidade(); 
 
 
 
