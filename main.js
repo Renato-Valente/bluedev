@@ -439,11 +439,136 @@ const getEstoque = async() => {
 }
 
 
+const getEstrutura = async () => {
+
+
+    console.log('Vamos ler essas tabelas 🧐')
+    const wb = xlsx.readFile('01.08.2025 Custo dos Produtos.xlsm', {
+    // Ajuda quando houver células com datas
+    cellDates: true
+    });
+
+    console.log(wb.SheetNames);
+    const aba = 'BD Preços dos Produtos';
+    let rows = xlsx.utils.sheet_to_json(wb.Sheets[aba], {
+    defval: null,          // mantém colunas com vazio = null
+    raw: true              // mantém números como números
+    });
+
+    //conectando com banco
+    console.log('Vamos conectar com o banco 🐘');
+    const { Pool } = pkg;
+    
+    const pool = new Pool({
+    host: process.env.PGHOST,
+    port: Number(process.env.PGPORT || 5432),
+    database: process.env.PGDATABASE,
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    //  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false, // ajuste em prod
+    });
+
+    const cols = [
+        'cod_produto_final',
+        'codigo_materia_prima',
+        'base_estrutura',
+        'fator',
+        'qnt_pacote_caixa',
+    ]
+    
+    for(const r of rows){
+        try{
+            let row = r;
+            await pool.query(
+                //`insert into bd_estrutura (${cols.join(',')}) values($1,$2,$3,$4,$5)`,
+
+                `insert into bd_estrutura (${cols.join(',')}) values($1,$2,$3,$4,$5)`
+                +`on conflict (cod_produto_final, codigo_materia_prima) do\n`
+                +`update set(${cols.join(',')}) = ($1,$2,$3,$4,$5)`,
+                [
+                    row['SKU Prod. Final'], row['Código Mat. Prima'], row['Base Estrutura'], row['Fator'], row['Quant Cons /pct']
+                ]
+            )
+        }
+        catch(err){
+            console.log('deu errado aqui', err);
+        }
+    }
+}
+
+const getMateriaPrima = async () => {
+
+
+    console.log('Vamos ler essas tabelas 🧐')
+    const wb = xlsx.readFile('01.08.2025 Custo dos Produtos.xlsm', {
+    // Ajuda quando houver células com datas
+    cellDates: true
+    });
+
+    console.log(wb.SheetNames);
+    const aba = 'BD Mat. Prima Original';
+    let rows = xlsx.utils.sheet_to_json(wb.Sheets[aba], {
+    defval: null,          // mantém colunas com vazio = null
+    raw: true              // mantém números como números
+    });
+
+    //conectando com banco
+    console.log('Vamos conectar com o banco 🐘');
+    const { Pool } = pkg;
+    
+    const pool = new Pool({
+    host: process.env.PGHOST,
+    port: Number(process.env.PGPORT || 5432),
+    database: process.env.PGDATABASE,
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    //  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false, // ajuste em prod
+    });
+
+    const cols = [
+        'sku',
+        'data',
+        'descricao_matprima',
+        'um',
+        'estoque'
+    ]
+
+    for(const r of rows){
+        try{
+            let row = r;
+            console.log('ANTES DA MUDANÇA\n', row);
+
+            await pool.query(
+                `insert into bd_matprima (${cols.join(',')}) values($1,$2,$3,$4,$5)\n`
+                +`on conflict (sku) do\n`
+                +`update set (${cols.join(',')}) = ($1,$2,$3,$4,$5)`,
+                [
+                    row['Código Matéria Prima'], '09/03/2000',
+                    row['Descrição'], row['UM'], row['Estoque']
+                ]
+            )
+        }
+        catch(err){
+            console.log('deu errado 😢', err);
+        }
+    }
+}
+
+
 //getProdutos(); //Done
 //getProducao(); //Done
 //getParadas(); //Done
 //getFornecedor(); // Done
-//getEstoque(); //(Done?)
+//getEstrutura(); //Done
+//getEstoque(); //(Done?) Sem id no Excel, usando o valor padrão (inscrement)
+//getMateriaPrima(); //(Done?) sem data no excel, usando 09/03/2000 em todos
+
+
+
+
+
+
+
 
 
 
