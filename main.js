@@ -128,12 +128,28 @@ const getProducao = async () => {
 
     //console.log(wb.SheetNames);
     const aba = 'BD_Producao';
-    let rows = xlsx.utils.sheet_to_json(wb.Sheets[aba], {
+    let rows_raw = xlsx.utils.sheet_to_json(wb.Sheets[aba], {
     defval: null,          // mantém colunas com vazio = null
     raw: true              // mantém números como números
     });
 
-    console.log('resultado:', rows[1]);
+    let rows_text = xlsx.utils.sheet_to_json(wb.Sheets[aba], {defval:null, raw:false});
+
+    // rows_raw converte os numeros para numeros e rows_text mantem campos como strings
+    // rows eh um merge dos dois. Assim, mantemos os campos que queremos (Horas) como string e convertemos
+    //os outros para numeros
+
+    let rows = rows_raw.map((row, i) => {
+        row['Hora_Inicio_Producao'] = rows_text[i]['Hora_Inicio_Producao'];
+        row['Hora_Fim_Produção'] = rows_text[i]['Hora_Fim_Produção'];
+        row['Total_Producao'] = rows_text[i]['Total_Producao'];
+        row['Tempo_Inatividade'] = rows_text[i]['Tempo_Inatividade'];
+        row['Tempo_Disp_Produção'] = rows_text[i]['Tempo_Disp_Produção'];
+
+        return row;
+    })
+
+    //console.log('resultado:', rows[1]);
 
     //conectando com banco
     console.log('Vamos conectar com o banco 🐘');
@@ -186,28 +202,68 @@ const getProducao = async () => {
         'customp_total',
     ]
 
-    for(const r of rows){
+    /** 
+     * @param {string} time
+     */
+    const convertToMinutes = (time) => {
+        //converte horas e minutos para minutos ex: 04:20 = 260  (4 horas e 20 minutos = 260 minutos) 
+        const [hours, minutes] = time.split(':');
+        return Number(hours) * 60 + Number(minutes);
+    }
 
+    for(let r of rows){
 
         try{
+            delete(r['Id']);
+
+            console.log('row antes das alterações:', r, '\n');
+            const [year, month, day] = r['Data'].toISOString().slice(0,10).split('-');
+
+            //RENATOBOSS MEXENDO AQUI 🙂
+            /**
+             * @param {string} str
+             * @returns {string[]}
+             */
+            const getTime = (str) => {
+                //funcao que lê string do excel e retorna [hora, minutos]
+                //OBS: tbm coloca o zero se estiver faltando ex: 5:20 = 05:20
+                return str.split(':').slice(0,2).map((item) => {
+                    if(item.length > 1) return item;
+                    return `0${item}`;
+                })
+            }
+            
+            const [inicio_hora, inicio_min] = getTime(r['Hora_Inicio_Producao']);
+            r['Hora_Inicio_Producao'] = `${year}-${month}-${day}T${inicio_hora}:${inicio_min}:00.000Z`
+
+            //arrumando o hora_fim_producao
+
+            const [fim_hora, fim_min] = getTime(r['Hora_Fim_Produção']);
+
+            r['Hora_Fim_Produção'] = `${year}-${month}-${day}T${fim_hora}:${fim_min}:00.000Z`
+
+            
+            //convertendo para quantidade em minutos com convertToMinutes
+            r['Tempo_Disp_Produção'] = convertToMinutes(getTime(r['Tempo_Disp_Produção']).join(':')); //convertToMinutes(HH:MM)
+            r['Tempo_Inatividade'] = convertToMinutes(getTime(r['Tempo_Inatividade']).join(':'));
+            r['Total_Producao'] = convertToMinutes(getTime(r['Total_Producao']).join(':'));
+
             let row = Object.values(r);
-            //Ajustando o row
-            row[10] = row[10].toISOString().slice(11, 19); //converter para 13:23:04
-            row[11] = row[11].toISOString().slice(11, 19);
-            row[12] = row[12].toISOString().slice(11, 19);
-            row[13] = row[13].toISOString().slice(11, 19);
-            row[14] = 25;
+            delete(row['Id']);
+
             await pool.query(
-                `insert into bd_producao (${cols.join(',')}) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)\n`
-                +`on conflict (id) do update set (${cols.join(',')}) = ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)`,
-                row
+                `insert into bd_producao (${cols.join(',')}) values (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)\n`
+                //+`on conflict (id) do update set (${cols.join(',')}) = ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)`,
+                ,row
             )
         }
         catch(err){
             console.log('erro:', err);
+            //break;
             continue;
         }
 
+        //break;
     }
 }
 
@@ -268,6 +324,7 @@ const getParadas = async () => {
             let row = r;
             console.log('ESTE EH O OBJETO ANTES DAS ALTERACOES\n', row)
             //delete(row['Id']);
+            delete(row['Id'])
             delete(row['Nome do Produto']);
             //RENATOBOSS MEXENDO AQUI!!!
             //row['Data'] = '09/03/2000'
@@ -287,10 +344,10 @@ const getParadas = async () => {
 
 
             await pool.query(
-                `insert into bd_parada (${cols.join(',')}) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)\n`
-                +`on conflict (id, sku) do\n`
-                +`update set (${cols.join(',')}) = ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-                Object.values(row)
+                `insert into bd_parada (${cols.join(',')}) values(DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)\n`
+                //+`on conflict (id, sku) do\n`
+                //+`update set (${cols.join(',')}) = ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`
+                ,Object.values(row)
             )
         }
         catch(err){
@@ -543,9 +600,9 @@ const getMateriaPrima = async () => {
 
             await pool.query(
                 `insert into bd_matprima (${cols.join(',')}) values($1,$2,$3,$4,$5)\n`
-                +`on conflict (sku) do\n`
-                +`update set (${cols.join(',')}) = ($1,$2,$3,$4,$5)`,
-                [
+                //+`on conflict (sku) do\n`
+                //+`update set (${cols.join(',')}) = ($1,$2,$3,$4,$5)`
+                ,[
                     row['Código Matéria Prima'], '09/03/2000',
                     row['Descrição'], row['UM'], row['Estoque']
                 ]
@@ -619,9 +676,9 @@ const getQualidade = async () => {
 
             await pool.query(
                 `insert into bd_qualidade (${cols.join(',')}) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)\n`
-                +`on conflict (lote_id) do \n`
-                +`update set (${cols.join(',')}) = ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
-                Object.values(row)
+                //+`on conflict (lote_id) do \n`
+                //+`update set (${cols.join(',')}) = ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`
+                , Object.values(row)
             )
         }
         catch(err){
@@ -633,14 +690,16 @@ const getQualidade = async () => {
 }
 
 
-//getProdutos(); //Done
-//getProducao(); //Done
-//getParadas(); //Done  coluna id adicionada e contraint (id, sku) criada
-//getFornecedor(); // Done
-//getEstrutura(); //Done
-//getEstoque(); //(Done?) Sem id no Excel, usando o valor padrão (inscrement) sem update
-//getMateriaPrima(); //(Done?) sem data no excel, usando 09/03/2000 em todos
-//getQualidade(); 
+//await getProdutos(); //Done
+await getProducao(); //Done
+//await getParadas(); //Done  coluna id adicionada e contraint (id, sku) criada
+//await getFornecedor(); // Done
+//await getEstrutura(); //Done
+//await getEstoque(); //(Done?) Sem id no Excel, usando o valor padrão (inscrement) sem update
+//await getMateriaPrima(); //(Done?) sem data no excel, usando 09/03/2000 em todos
+//await getQualidade();
+
+//producao, paradas, estoque, 
 
 
 
