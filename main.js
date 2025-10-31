@@ -322,7 +322,7 @@ const getParadas = async () => {
 
 
             let row = r;
-            console.log('ESTE EH O OBJETO ANTES DAS ALTERACOES\n', row)
+            //console.log('ESTE EH O OBJETO ANTES DAS ALTERACOES\n', row)
             //delete(row['Id']);
             delete(row['Id'])
             delete(row['Nome do Produto']);
@@ -332,15 +332,17 @@ const getParadas = async () => {
 
 
 
-            row['Total_Parado'] = Number(row['Total_Parado'].toFixed(7));
-            row['Hora_Inicio'] = Number(row['Hora_Inicio'].toFixed(7));
-            row['Hora_Fim'] = Number(row['Hora_Fim'].toFixed(7));
+            row['Total_Parado'] = row['Total_Parado'] ? Number(row['Total_Parado'].toFixed(7)) : 0;
+            row['Hora_Inicio'] = row['Hora_Inicio'] ? Number(row['Hora_Inicio'].toFixed(7)) : 0;
+            row['Hora_Fim'] = row['Hora_Fim'] ? Number(row['Hora_Fim'].toFixed(7)) : 0;
+            row['Custo_Fabril'] = isNaN(row['Custo_Fabril']) ? null : row['Custo_Fabril'];
+            row['CustoTotal'] = isNaN(row['CustoTotal']) ? null : row['CustoTotal'];
             /* row['Custo_Fabril'] = Number(row['Custo_Fabril'].toFixed(2));
             row['CustoTotal'] = Number(row['CustoTotal'].toFixed(2)); */
             //formatando row
             //row['Total_Parado'] = row['Total_Parado'].toISOString().slice(11, 19);
-            console.log('size:', Object.values(row).length)
-            console.log('ESSE EH O OBJETO QUE VAI SER INSERIDO NO BANCO\n:', row);
+            //console.log('size:', Object.values(row).length)
+            //console.log('ESSE EH O OBJETO QUE VAI SER INSERIDO NO BANCO\n:', row);
 
 
             await pool.query(
@@ -691,8 +693,8 @@ const getQualidade = async () => {
 
 
 //await getProdutos(); //Done
-await getProducao(); //Done
-//await getParadas(); //Done  coluna id adicionada e contraint (id, sku) criada
+//await getProducao(); //Done
+await getParadas(); //Done  coluna id adicionada e contraint (id, sku) criada
 //await getFornecedor(); // Done
 //await getEstrutura(); //Done
 //await getEstoque(); //(Done?) Sem id no Excel, usando o valor padrão (inscrement) sem update
